@@ -6,6 +6,6 @@ References: [MnasNet: Platform-Aware Neural Architecture Search for Mobile](http
 
 The mnasnet model in this repo has been optimized to run on AWS infrastructure.
 
-For details on the original TPU implementation, please refer to this ![mnasnet original implementation]  https://github.com/tensorflow/tpu/tree/master/models/official/mnasnet
+For details on the original TPU implementation, please refer to this [MnasNet original implementation](https://github.com/tensorflow/tpu/tree/master/models/official/mnasnet)
 
 

@@ -917,46 +917,7 @@ def main(unused_argv):
       train_spec = tf.estimator.TrainSpec(input_fn=imagenet_train.input_fn, max_steps=FLAGS.train_steps)
       eval_spec = tf.estimator.EvalSpec(input_fn=imagenet_eval.input_fn, steps=FLAGS.num_eval_images // FLAGS.eval_batch_size, throttle_secs=600)
       tf.estimator.train_and_evaluate(mnasnet_est, train_spec, eval_spec)
-
-      # curr_rank = 0
-      # if FLAGS.use_horovod:
-      #     curr_rank = hvd.rank()
-      # while current_step < FLAGS.train_steps:
-      #   # Train for up to steps_per_eval number of steps.
-      #   # At the end of training, a checkpoint will be written to --model_dir.
-      #   next_checkpoint = min(current_step + FLAGS.steps_per_eval,
-      #                         FLAGS.train_steps)
-      #   if FLAGS.use_horovod:
-      #     mnasnet_est.train(
-      #         input_fn=imagenet_train.input_fn, max_steps=next_checkpoint, hooks=[])
-      #   else:
-      #     mnasnet_est.train(
-      #         input_fn=imagenet_train.input_fn, max_steps=next_checkpoint)
-      #   current_step = next_checkpoint
-
-      #   tf.logging.info('Finished training up to step %d. Elapsed seconds %d. Hvd rank %d',
-      #                   next_checkpoint, int(time.time() - start_timestamp), curr_rank)
-
-      #   # Evaluate the model on the most recent model in --model_dir.
-      #   # Since evaluation happens in batches of --eval_batch_size, some images
-      #   # may be excluded modulo the batch size. As long as the batch size is
-      #   # consistent, the evaluated images are also consistent.
-      #   eval_on_single_gpu = FLAGS.eval_on_single_gpu 
-      #   tf.logging.info('Starting to evaluate.')
-      #   if eval_on_single_gpu:
-      #     if curr_rank == 0:
-      #       eval_results = mnasnet_est.evaluate(
-      #         input_fn=imagenet_eval.input_fn,
-      #         steps=FLAGS.num_eval_images)
-      #       tf.logging.info('Eval results at step %d: %s. Hvd rank %d', next_checkpoint,
-      #                       eval_results, curr_rank)
-      #   else:
-      #     eval_results = mnasnet_est.evaluate(
-      #         input_fn=imagenet_eval.input_fn,
-      #         steps=FLAGS.num_eval_images // FLAGS.eval_batch_size)
-      #     tf.logging.info('Eval results at step %d: %s. Hvd rank %d', next_checkpoint,
-      #                     eval_results, curr_rank)
-
+      
       elapsed_time = int(time.time() - start_timestamp)
       tf.logging.info('Finished training up to step %d. Elapsed seconds %d.',
                       FLAGS.train_steps, elapsed_time)

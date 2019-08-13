@@ -315,6 +315,12 @@ flags.DEFINE_bool(
 flags.DEFINE_integer(
     'warmup_epochs', 5, 'The number of warmup epochs to ramp up lr')
 
+flags.DEFINE_bool(
+    'use_larc',
+    default=False,
+    help=('Whether to use larc optimizer for large batch training.'))
+
+
 # Learning rate schedule
 LR_SCHEDULE = [  # (multiplier, epoch to start) tuples
     (1.0, 5), (0.1, 30), (0.01, 60), (0.001, 80)
@@ -367,6 +373,62 @@ def get_pretrained_variables_to_restore(checkpoint_path,
     tf.logging.info('Init variable [%s] from [%s] in ckpt', v.op.name,
                     variable_name_ckpt)
   return variables_to_restore
+
+class LarcOptimizer(tf.train.Optimizer):
+    """ LARC implementation
+        -------------------
+        Parameters:
+          - optimizer:     initial optimizer that you wanna apply
+                           example: tf.train.MomentumOptimizer
+          - learning_rate: initial learning_rate from initial optimizer
+          - clip:          if True apply LARC otherwise LARS
+          - epsilon:       default value is weights or grads are 0.
+          - name
+          - use_locking
+    """
+
+    def __init__(self, optimizer, learning_rate, eta, clip=True, epsilon=1.,
+                 name="LarcOptimizer", use_locking=False):
+        super(LarcOptimizer, self).__init__(
+            name=name, use_locking=use_locking)
+        self._optimizer = optimizer
+        self._learning_rate = learning_rate
+        self._eta = float(eta)
+        self._clip = clip
+        self._epsilon = float(epsilon)
+
+    def compute_gradients(self, *args, **kwargs):
+        return self._optimizer.compute_gradients(*args, **kwargs)
+
+    def apply_gradients(self, gradvars, *args, **kwargs):
+        v_list = [tf.norm(tensor=v, ord=2) for _, v in gradvars]
+        g_list = [tf.norm(tensor=g, ord=2) if g is not None else 0.0
+                  for g, _ in gradvars]
+        v_norms = tf.stack(v_list)
+        g_norms = tf.stack(g_list)
+        zeds = tf.zeros_like(v_norms)
+        # assign epsilon if weights or grads = 0, to avoid division by zero
+        # also prevent biases to get stuck at initialization (0.)
+        cond = tf.logical_and(
+            tf.not_equal(v_norms, zeds),
+            tf.not_equal(g_norms, zeds))
+        true_vals = tf.scalar_mul(self._eta, tf.div(v_norms, g_norms))
+        # true_vals = tf.scalar_mul(tf.cast(self._eta, tf.float32), tf.div(tf.cast(v_norms, tf.float32), tf.cast(g_norms, tf.float32)))
+        false_vals = tf.fill(tf.shape(v_norms), self._epsilon)
+        larc_local_lr = tf.where(cond, true_vals, false_vals)
+        if self._clip:
+            ones = tf.ones_like(v_norms)
+            lr = tf.fill(tf.shape(v_norms), self._learning_rate)
+            # We need gradients to compute local learning rate,
+            # so compute_gradients from initial optimizer have to called
+            # for which learning rate is already fixed
+            # We then have to scale the gradients instead of the learning rate.
+            larc_local_lr = tf.minimum(tf.div(larc_local_lr, lr), ones)
+        gradvars = [(tf.multiply(larc_local_lr[i], g), v)
+                    if g is not None else (None, v)
+                    for i, (g, v) in enumerate(gradvars)]
+        return self._optimizer.apply_gradients(gradvars, *args, **kwargs)
+
 
 
 def mnasnet_model_fn(features, labels, mode, params):
@@ -532,6 +594,8 @@ def mnasnet_model_fn(features, labels, mode, params):
       # lr scaling performed above
       optimizer = mnasnet_utils.build_optimizer(learning_rate) # * hvd.size())
       optimizer = hvd.DistributedOptimizer(optimizer)
+      if FLAGS.use_larc:
+        optimizer = LarcOptimizer(optimizer, learning_rate, 0.013, clip=True)
     else:
       optimizer = mnasnet_utils.build_optimizer(learning_rate)
     if FLAGS.use_tpu:

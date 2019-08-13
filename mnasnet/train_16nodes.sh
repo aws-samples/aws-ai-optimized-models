@@ -34,5 +34,5 @@ set -ex
         -x NCCL_SOCKET_IFNAME=ens5 -mca btl_tcp_if_exclude lo,docker0 \
         -x TF_CPP_MIN_LOG_LEVEL=0 \
         python /home/ubuntu/HyperConnect/tpu/models/official/mnasnet/mnasnet_main_hvd.py --use_tpu=False --data_dir=/home/ubuntu/data --model_dir=./results_hvd --train_batch_size=128 --eval_batch_size=128 \
-        --train_steps=27369 --steps_per_eval=2000  --warmup_epochs=40 --base_learning_rate=0.008 --skip_host_call=False --data_format='channels_first' --transpose_input=False --use_horovod=True \
+        --train_steps=27369 --steps_per_eval=2000  --warmup_epochs=20 --base_learning_rate=0.008 --skip_host_call=False --data_format='channels_first' --transpose_input=False --use_horovod=True \
         --eval_on_single_gpu=True --use_larc=True

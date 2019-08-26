@@ -45,7 +45,7 @@ import numpy as np
 import tensorflow as tf
 
 import imagenet_input
-import mnasnet_models_v1 as mnasnet_models
+import mnasnet_models_v2 as mnasnet_models
 import mnasnet_utils
 from tensorflow.contrib.tpu.python.tpu import async_checkpoint
 from tensorflow.contrib.training.python.training import evaluation
@@ -53,6 +53,41 @@ from tensorflow.core.protobuf import rewriter_config_pb2
 from tensorflow.python.estimator import estimator
 from tensorflow.python.keras import backend as K
 import horovod.tensorflow as hvd
+from mpi4py import MPI
+
+def get_int_env_var(var_name, default=0):
+  value = os.environ.get(var_name)
+  if value is not None:
+    return int(value)
+  else:
+    return default
+
+visible_devices = os.environ.get('CUDA_VISIBLE_DEVICES')
+print("visible devices: %s" % visible_devices)
+
+
+def get_world_rank():
+  return get_int_env_var('OMPI_COMM_WORLD_RANK')
+
+def get_world_size():
+  return get_int_env_var('OMPI_COMM_WORLD_SIZE')
+
+def get_local_rank():
+  return get_int_env_var('OMPI_COMM_WORLD_LOCAL_RANK')
+
+def get_local_size():
+  return get_int_env_var('OMPI_COMM_WORLD_LOCAL_SIZE')
+
+def get_world_node_rank():
+  return get_int_env_var('OMPI_COMM_WORLD_NODE_RANK')
+
+mpi_rank = get_world_rank()
+mpi_size = get_world_size()
+mpi_local_rank = get_local_rank()
+mpi_node_rank = get_world_node_rank()
+mpi_local_size = get_local_size()
+
+comm = MPI.COMM_WORLD
 
 FLAGS = flags.FLAGS
 
@@ -320,6 +355,11 @@ flags.DEFINE_bool(
     default=False,
     help=('Whether to use larc optimizer for large batch training.'))
 
+flags.DEFINE_bool(
+    'use_v2',
+    default=False,
+    help=('Whether to use version 2 of optimized mnasnet. Runs faster but currently cannot leverage nccl all reduce.'))
+
 
 # Learning rate schedule
 LR_SCHEDULE = [  # (multiplier, epoch to start) tuples
@@ -583,7 +623,7 @@ def mnasnet_model_fn(features, labels, mode, params):
 
     # Mnas optimize - fix lr based on horovod here!!!!!
     if FLAGS.use_horovod:
-        scaled_lr = FLAGS.base_learning_rate * (FLAGS.train_batch_size / 256.0) * hvd.size()
+        scaled_lr = FLAGS.base_learning_rate * (FLAGS.train_batch_size / 256.0) * mpi_size
     else:
         scaled_lr = FLAGS.base_learning_rate * (FLAGS.train_batch_size / 256.0)
     learning_rate = mnasnet_utils.build_learning_rate(scaled_lr, global_step,
@@ -862,7 +902,7 @@ def main(unused_argv):
     if not FLAGS.use_horovod:
       save_checkpoints_steps = max(100, FLAGS.iterations_per_loop)
     else:
-      save_checkpoints_steps = max(100, FLAGS.iterations_per_loop) if hvd.rank() == 0 else None
+      save_checkpoints_steps = max(100, FLAGS.iterations_per_loop) if mpi_rank == 0 else None
   config = tf.contrib.tpu.RunConfig(
       cluster=tpu_cluster_resolver,
       model_dir=FLAGS.model_dir,
@@ -883,7 +923,12 @@ def main(unused_argv):
   # Horovod: pin GPU to be used to process local rank (one GPU per process)
   if FLAGS.use_horovod:
     config.session_config.gpu_options.allow_growth = True
-    config.session_config.gpu_options.visible_device_list = str(hvd.local_rank())
+    if FLAGS.use_v2:
+      # v2 uses cudnn grouped convolutions which causes TF to violate the visible devices and cause cuda allocation errors.
+      # Hence we have to force TF to see only one GPU device using the env var CUDA_VISIBLE_DEVICES and that means local rank will always be 0.  
+      config.session_config.gpu_options.visible_device_list = str(0)
+    else:
+      config.session_config.gpu_options.visible_device_list = str(hvd.local_rank())
   
   
   # Validates Flags.
@@ -895,15 +940,15 @@ def main(unused_argv):
 
   # Initializes model parameters.
   steps_per_epoch = FLAGS.num_train_images / FLAGS.train_batch_size
-  steps_per_epoch = steps_per_epoch // hvd.size() if FLAGS.use_horovod else steps_per_epoch
+  steps_per_epoch = steps_per_epoch // mpi_size if FLAGS.use_horovod else steps_per_epoch
   params = dict(
       steps_per_epoch=steps_per_epoch,
       use_bfloat16=FLAGS.use_bfloat16,
       quantized_training=FLAGS.quantized_training)
   if FLAGS.use_horovod:
       params['hvd'] = True 
-      params['hvd_curr_host'] = hvd.rank()
-      params['hvd_num_hosts'] = hvd.size()
+      params['hvd_curr_host'] = mpi_rank
+      params['hvd_num_hosts'] = mpi_size
   mnasnet_est = tf.contrib.tpu.TPUEstimator(
       use_tpu=FLAGS.use_tpu,
       model_fn=mnasnet_model_fn,
@@ -1009,7 +1054,7 @@ def main(unused_argv):
       assert FLAGS.mode == 'train_and_eval'
       curr_rank = 0
       if FLAGS.use_horovod:
-          curr_rank = hvd.rank()
+          curr_rank = mpi_rank
       while current_step < FLAGS.train_steps:
         # Train for up to steps_per_eval number of steps.
         # At the end of training, a checkpoint will be written to --model_dir.

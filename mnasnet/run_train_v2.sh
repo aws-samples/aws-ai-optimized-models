@@ -18,5 +18,5 @@
 export CUDA_VISIBLE_DEVICES="$OMPI_COMM_WORLD_LOCAL_RANK"
 echo "using GPU " $OMPI_COMM_WORLD_LOCAL_RANK
 python /home/ubuntu/aws-ai-optimized-models/mnasnet/mnasnet_main_hvd_v2.py --use_tpu=False --data_dir=/home/ubuntu/data --model_dir=./results_hvd --train_batch_size=256 --eval_batch_size=256 \
-        --train_steps=13684 --steps_per_eval=13684  --iterations_per_loop=13684 --warmup_epochs=60 --base_learning_rate=0.008 --skip_host_call=True --data_format='channels_first' --transpose_input=False --use_horovod=True \
+        --train_steps=13684 --steps_per_eval=13684  --warmup_epochs=60 --base_learning_rate=0.008 --skip_host_call=True --data_format='channels_first' --transpose_input=False --use_horovod=True \
         --eval_on_single_gpu=True --use_larc=False --use_v2=True

@@ -27,11 +27,15 @@ source activate tensorflow_p36
 echo "Launching training job using 128 GPUs"
 set -ex
 
+# use ens3 interface for DLAMI Ubuntu and eth0 interface for DLAMI AmazonLinux. If instance type is p3dn.24xlarge, change interface to ens5
+INSTANCE_TYPE=`curl http://169.254.169.254/latest/meta-data/instance-type 2>>${CONDA_DEFAULT_ENV}.err`
+if [  -n "$(uname -a | grep Ubuntu)" ]; then INTERFACE=ens3; if [ $INSTANCE_TYPE == "p3dn.24xlarge" ]; then INTERFACE=ens5; fi ; else INTERFACE=eth0; fi
+
 ~/anaconda3/envs/tensorflow_p36/bin/mpirun -np 128 -hostfile /home/ubuntu/hostfile -mca plm_rsh_no_tree_spawn 1 \
         -bind-to socket -map-by slot \
         -x HOROVOD_HIERARCHICAL_ALLREDUCE=1 -x HOROVOD_FUSION_THRESHOLD=16777216 \
         -x NCCL_MIN_NRINGS=4 -x LD_LIBRARY_PATH -x PATH -mca pml ob1 -mca btl ^openib \
-        -x NCCL_SOCKET_IFNAME=ens5 -mca btl_tcp_if_exclude lo,docker0 \
+        -x NCCL_SOCKET_IFNAME=$INTERFACE -mca btl_tcp_if_exclude lo,docker0 \
         -x TF_CPP_MIN_LOG_LEVEL=0 \
         python /home/ubuntu/HyperConnect/tpu/models/official/mnasnet/mnasnet_main_hvd.py --use_tpu=False --data_dir=/home/ubuntu/data --model_dir=./results_hvd --train_batch_size=128 --eval_batch_size=128 \
         --train_steps=27369 --steps_per_eval=2000  --warmup_epochs=20 --base_learning_rate=0.008 --skip_host_call=False --data_format='channels_first' --transpose_input=False --use_horovod=True \

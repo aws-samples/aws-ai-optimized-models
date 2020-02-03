@@ -40,7 +40,7 @@ from __future__ import print_function
 import re
 import tensorflow as tf
 
-import mnasnet_model_xla as mnasnet_model
+import mnasnet_model as mnasnet_model
 
 
 class MnasNetDecoder(object):

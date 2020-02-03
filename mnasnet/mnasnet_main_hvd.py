@@ -56,7 +56,7 @@ import horovod.tensorflow as hvd
 
 FLAGS = flags.FLAGS
 
-FAKE_DATA_DIR = 'gs://cloud-tpu-test-datasets/fake_imagenet'
+FAKE_DATA_DIR = None #'gs://cloud-tpu-test-datasets/fake_imagenet'
 
 flags.DEFINE_bool(
     'use_tpu',
@@ -1016,8 +1016,11 @@ def main(unused_argv):
         next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                               FLAGS.train_steps)
         if FLAGS.use_horovod:
-          mnasnet_est.train(
-              input_fn=imagenet_train.input_fn, max_steps=next_checkpoint, hooks=[bcast_hook])
+          # try dali pipeline
+          mnasnet_est.train(input_fn=imagenet_train.train_data_fn, max_steps=next_checkpoint, hooks=[bcast_hook])
+          # this uses the old tf data pipeline 
+          # mnasnet_est.train(
+          #     input_fn=imagenet_train.input_fn, max_steps=next_checkpoint, hooks=[bcast_hook])
         else:
           mnasnet_est.train(
               input_fn=imagenet_train.input_fn, max_steps=next_checkpoint)
@@ -1035,13 +1038,13 @@ def main(unused_argv):
         if eval_on_single_gpu:
           if curr_rank == 0:
             eval_results = mnasnet_est.evaluate(
-              input_fn=imagenet_eval.input_fn,
-              steps=FLAGS.num_eval_images)
+              input_fn=imagenet_eval.train_data_fn, #input_fn
+              steps=FLAGS.num_eval_images // FLAGS.eval_batch_size)
             tf.logging.info('Eval results at step %d: %s. Hvd rank %d', next_checkpoint,
                             eval_results, curr_rank)
         else:
           eval_results = mnasnet_est.evaluate(
-              input_fn=imagenet_eval.input_fn,
+              input_fn=imagenet_eval.train_data_fn, #input_fn
               steps=FLAGS.num_eval_images // FLAGS.eval_batch_size)
           tf.logging.info('Eval results at step %d: %s. Hvd rank %d', next_checkpoint,
                           eval_results, curr_rank)

@@ -45,7 +45,42 @@ import os
 import tensorflow as tf
 
 import preprocessing
+from utils import data_utils
+from utils import hvd_utils
 
+
+# for dali processing
+def list_filenames_in_dataset(data_dir, mode, count=True):
+
+    if mode not in ["train", 'validation']:
+        raise ValueError("Unknown mode received: %s" % mode)
+
+    if not os.path.exists(data_dir):
+        raise FileNotFoundError("The data directory: `%s` can't be found" % data_dir)
+
+    filename_pattern = os.path.join(data_dir, '%s-*' % mode)
+
+    file_list = sorted(tf.gfile.Glob(filename_pattern))
+    num_samples = 0 
+    
+    if count:
+        def count_records(tf_record_filename):
+            count = 0
+            for _ in tf.python_io.tf_record_iterator(tf_record_filename):
+                count += 1
+            return count
+
+        n_files = len(file_list)
+        num_samples = (count_records(file_list[0]) * (n_files - 1) + count_records(file_list[-1]))
+
+    return file_list, num_samples
+
+def parse_dali_idx_dataset(data_idx_dir, mode):
+    
+    if data_idx_dir is not None:
+        filenames, _ = list_filenames_in_dataset(data_dir=data_idx_dir, mode=mode, count=False)
+        
+    return filenames
 
 def build_image_serving_input_fn(image_size):
   """Builds a serving input fn for raw images."""
@@ -83,7 +118,7 @@ class ImageNetTFExampleInput(object):
   def __init__(self,
                is_training,
                use_bfloat16,
-               num_cores=8,
+               num_cores=64,
                image_size=224,
                transpose_input=False):
     self.image_preprocessing_fn = preprocessing.preprocess_image
@@ -207,8 +242,7 @@ class ImageNetTFExampleInput(object):
           num_parallel_calls=self.num_cores)
 
     # Assign static batch size dimension
-    dataset = dataset.map(functools.partial(self.set_shapes, batch_size))
-
+    dataset = dataset.map(functools.partial(self.set_shapes, batch_size), num_parallel_calls=self.num_cores)
     # Prefetch overlaps in-feed with training
     dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
     return dataset
@@ -237,7 +271,7 @@ class ImageNetInput(ImageNetTFExampleInput):
                transpose_input,
                data_dir,
                image_size=224,
-               num_parallel_calls=64,
+               num_parallel_calls=16,
                cache=False):
     """Create an input from TFRecord files.
 
@@ -311,14 +345,39 @@ class ImageNetInput(ImageNetTFExampleInput):
     # Read the data from disk in parallel
     dataset = dataset.apply(
         tf.contrib.data.parallel_interleave(
-            fetch_dataset, cycle_length=self.num_parallel_calls, sloppy=True))
+            fetch_dataset, cycle_length=self.num_parallel_calls, sloppy=True, prefetch_input_elements=16))
 
     if self.cache:
       dataset = dataset.cache().apply(
-          tf.contrib.data.shuffle_and_repeat(1024 * 16))
+          tf.contrib.data.shuffle_and_repeat(1024*16))
     else:
       dataset = dataset.shuffle(1024)
     return dataset
+
+  # for dali
+  def train_data_fn(self, params):
+    data_dir = '/data'
+    data_index_dir = '/data/index_files'
+    if self.is_training:
+      mode = 'train'
+    else:
+      mode = 'validation'
+    if data_dir is not None:
+          #if hvd.rank() == 0:
+          tf.logging.info("Using DALI input... ")
+          filenames, num_samples = list_filenames_in_dataset(data_dir=data_dir, mode=mode)
+          idx_filenames = parse_dali_idx_dataset(data_idx_dir=data_index_dir,mode=mode)
+          return data_utils.get_dali_input_fn(
+                            filenames=filenames,
+                            idx_filenames=idx_filenames,
+                            batch_size=params['batch_size'],
+                            height=self.image_size,
+                            width=self.image_size,
+                            training=self.is_training,
+                            distort_color=False,
+                            num_threads=4,
+                            deterministic=False
+                        )
 
 
 # Defines a selection of data from a Cloud Bigtable.

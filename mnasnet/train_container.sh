@@ -14,10 +14,13 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #!/usr/bin/env bash
+NUM_GPU=${1:-1}
+TRAIN_STEPS=${2:-218949}
+STEPS_PER_EVAL=${3:-218949}
+TRAIN_BATCH_SIZE=${4:-256}
+EVAL_BATCH_SIZE=${5:-256}
 
-cd /mnasnet
-
-mpirun -np 128 -hostfile /utils/hosts.txt -mca plm_rsh_no_tree_spawn 1 \
+mpirun -np ${NUM_GPU}  -mca plm_rsh_no_tree_spawn 1 \
         -bind-to none -map-by slot \
 	-x TF_ENABLE_AUTO_MIXED_PRECISION=1 \
         -x HOROVOD_HIERARCHICAL_ALLREDUCE=1 \
@@ -27,9 +30,9 @@ mpirun -np 128 -hostfile /utils/hosts.txt -mca plm_rsh_no_tree_spawn 1 \
         -x TF_ENABLE_NHWC=1 \
         -x TF_CUDNN_USE_AUTOTUNE=1 \
         -x TF_ENABLE_XLA=0 \
-        ompi_bind_p3.sh python3 mnasnet_main_hvd.py --use_tpu=False \
-        --data_dir=/data --model_dir=./results_hvd \
-        --train_batch_size=128 --eval_batch_size=128 \
-        --train_steps=27369 --steps_per_eval=27369 --skip_host_call=True --data_format='channels_first' \
+        python3 mnasnet_main_hvd.py --use_tpu=False \
+        --data_dir=/fsx/mnasnet --model_dir=./results_hvd \
+        --train_batch_size=${TRAIN_BATCH_SIZE} --eval_batch_size=${EVAL_BATCH_SIZE} \
+        --train_steps=${TRAIN_STEPS} --steps_per_eval=${STEPS_PER_EVAL} --skip_host_call=True --data_format='channels_first' \
         --transpose_input=False --use_horovod=True --num_parallel_calls=64 --eval_on_single_gpu=True \
-        --warmup_epochs=40 --base_learning_rate=0.008 --use_larc=False
+        --use_larc=False

@@ -356,8 +356,8 @@ class ImageNetInput(ImageNetTFExampleInput):
 
   # for dali
   def train_data_fn(self, params):
-    data_dir = '/data'
-    data_index_dir = '/data/index_files'
+    data_dir = '/fsx/mnasnet'
+    data_index_dir = '/fsx/mnasnet/index_files'
     if self.is_training:
       mode = 'train'
     else:

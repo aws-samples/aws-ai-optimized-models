@@ -1050,7 +1050,7 @@ def main(unused_argv):
                           eval_results, curr_rank)
 
       elapsed_time = int(time.time() - start_timestamp)
-      tf.logging.info('Finished training up to step %d. Elapsed seconds %d.',
+      tf.logging.info('Finished training up to step %d. Total elapsed seconds %d.',
                       FLAGS.train_steps, elapsed_time)
       if FLAGS.export_dir:
         export(mnasnet_est, FLAGS.export_dir, FLAGS.post_quantize)

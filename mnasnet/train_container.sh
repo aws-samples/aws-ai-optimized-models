@@ -30,7 +30,7 @@ mpirun -np ${NUM_GPU}  -mca plm_rsh_no_tree_spawn 1 \
         -x TF_ENABLE_NHWC=1 \
         -x TF_CUDNN_USE_AUTOTUNE=1 \
         -x TF_ENABLE_XLA=0 \
-        python3 mnasnet_main_hvd.py --use_tpu=False \
+        python3 /aws-ai-optimized-models/mnasnet/mnasnet_main_hvd.py --use_tpu=False \
         --data_dir=/fsx/mnasnet --model_dir=./results_hvd \
         --train_batch_size=${TRAIN_BATCH_SIZE} --eval_batch_size=${EVAL_BATCH_SIZE} \
         --train_steps=${TRAIN_STEPS} --steps_per_eval=${STEPS_PER_EVAL} --skip_host_call=True --data_format='channels_first' \
